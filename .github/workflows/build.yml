@@ -2,11 +2,13 @@ name: Build mod jar (26.3)
 
 on:
   push:
+    branches: ['**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -40,6 +42,7 @@ jobs:
         run: gradle build --no-daemon --stacktrace
 
       - name: Smoke-check jar
+        id: jar
         working-directory: ${{ steps.find.outputs.dir }}/build/libs
         run: |
           JAR=$(ls *.jar | grep -v -- '-sources' | head -n1)
@@ -49,12 +52,20 @@ jobs:
           if unzip -p "$JAR" fabric.mod.json | grep -q '\${version}'; then
             echo "version placeholder not expanded"; exit 1
           fi
+          echo "path=${{ steps.find.outputs.dir }}/build/libs/$JAR" >> "$GITHUB_OUTPUT"
 
+      # archive: false -> the raw .jar is attached to the run Summary (no .zip wrapper)
       - name: Upload mod jar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: AutoFish-26.3
-          path: |
+          path: ${{ steps.jar.outputs.path }}
+          archive: false
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (direct .jar download)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
             ${{ steps.find.outputs.dir }}/build/libs/*.jar
             !${{ steps.find.outputs.dir }}/build/libs/*-sources.jar
-          if-no-files-found: error
